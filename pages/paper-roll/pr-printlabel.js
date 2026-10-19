@@ -1,3 +1,4 @@
+
 import { useRouter } from 'next/router';
 import { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
@@ -80,26 +81,47 @@ const PrintLabelPage = () => {
 
     return (
         <div className="label-container">
-            
-
             <div className="label">
-                <div className="label-header">PAPER ROLL TAG</div>
+                <div className="label-header"><b>PAPER ROLL TAG</b></div>
                 <div className="label-content">
                     <div className="label-details">
-                        <p><strong>Kind:</strong> {roll.kind}</p>
-                        <p><strong>GSM:</strong> {roll.gsm}</p>
-                        <p><strong>Width:</strong> {roll.width} mm</p>
-                        <p><strong>Diameter:</strong> {roll.diameter} mm</p>
-                        <p><strong>Weight:</strong> {roll.weight} kg</p>
-                        <p><strong>Batch:</strong> {roll.batch}</p>
-                        <p><strong>Received Date:</strong> {new Date(roll.goods_receive_date || roll.created_at).toLocaleDateString()}</p>
+                        <table>
+                            <tbody>
+                                <tr>
+                                    <td>Kind</td><td>:</td><td>{roll.kind}</td>
+                                </tr>
+                                <tr>
+                                    <td>GSM</td><td>:</td><td>{roll.gsm}</td>
+                                </tr>
+                                <tr>
+                                    <td>Width</td><td>:</td><td>{roll.width} mm</td>
+                                </tr>
+                                <tr>
+                                    <td>Diameter</td><td>:</td><td>{roll.diameter} mm</td>
+                                </tr>
+                                <tr>
+                                    <td>Weight</td><td>:</td><td>{roll.weight} kg</td>
+                                </tr>
+                                <tr>
+                                    <td>Batch</td><td>:</td><td>{roll.batch}</td>
+                                </tr>
+                                <tr>
+                                    <td>Goods Received Date</td><td>:</td><td>{new Date(roll.goods_receive_date || roll.created_at).toLocaleDateString()}</td>
+                                </tr>
+                                <tr>
+                                    <td colSpan="3" style={{ textAlign: 'center' }}>
+                                        <div className="qr-code-container">
+                                            <div className="qr-code">
+                                                <QRCodeSVG value={roll.roll_id} size={110} />
+                                            </div>
+                                            <span className="qr-code-text">{roll.roll_id}</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
-                    <div className="qr-code-container">
-                        <div className="qr-code">
-                            <QRCodeSVG value={roll.roll_id} size={110} />
-                        </div>
-                        <span className="qr-code-text">{roll.roll_id}</span>
-                    </div>
+                    
                 </div>
             </div>
 

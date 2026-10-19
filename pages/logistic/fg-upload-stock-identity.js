@@ -45,44 +45,12 @@ export default function FgUploadStockIdentity({ plant }) {
         let successCount = 0;
         const currentErrorDetails = [];
 
-        const allLmgNumbersFromCsv = results.data.map(row => String(row.lmg_number ?? '').trim()).filter(id => id);
-
-        if (allLmgNumbersFromCsv.length === 0) {
-            setMessage('No lmg_number found in the CSV file.');
-            setUploading(false);
-            return;
-        }
-
-        const CHUNK_SIZE = 100; // Process 100 LMG numbers at a time
-        let existingLmgNumbers = new Set();
-
-        for (let i = 0; i < allLmgNumbersFromCsv.length; i += CHUNK_SIZE) {
-            const chunk = allLmgNumbersFromCsv.slice(i, i + CHUNK_SIZE);
-            const { data: existingStock, error: fetchError } = await supabase
-                .from('fg_stock')
-                .select('lmg_number')
-                .eq('plant', plant)
-                .in('lmg_number', chunk);
-
-            if (fetchError) {
-                currentErrorDetails.push(`Error fetching chunk of existing stock for plant ${plant}: ${fetchError.message}`);
-                continue; // Move to the next chunk
-            }
-            
-            existingStock.forEach(item => existingLmgNumbers.add(item.lmg_number));
-        }
-
-        const dataToUpdate = results.data.map((row, index) => {
+        const dataToUpsert = results.data.map((row, index) => {
             const csvRowNumber = index + 2;
             const lmg_number = String(row.lmg_number ?? '').trim();
 
             if (!lmg_number) {
                 currentErrorDetails.push(`Row ${csvRowNumber}: Missing or empty lmg_number.`);
-                return null;
-            }
-
-            if (!existingLmgNumbers.has(lmg_number)) {
-                currentErrorDetails.push(`Row ${csvRowNumber} (LMG ${lmg_number}): Does not exist for plant ${plant} and will be skipped.`);
                 return null;
             }
             
@@ -98,13 +66,15 @@ export default function FgUploadStockIdentity({ plant }) {
             };
         }).filter(Boolean);
 
-        if (dataToUpdate.length > 0) {
-            for (let i = 0; i < dataToUpdate.length; i += CHUNK_SIZE) {
-                const chunk = dataToUpdate.slice(i, i + CHUNK_SIZE);
-                const { error: updateError } = await supabase.from('fg_stock').upsert(chunk, { onConflict: 'lmg_number' });
+        if (dataToUpsert.length > 0) {
+            const CHUNK_SIZE = 100;
+            for (let i = 0; i < dataToUpsert.length; i += CHUNK_SIZE) {
+                const chunk = dataToUpsert.slice(i, i + CHUNK_SIZE);
+                // Upsert into the new fg_stock_identity table
+                const { error: upsertError } = await supabase.from('fg_stock_identity').upsert(chunk, { onConflict: 'lmg_number, plant' });
 
-                if (updateError) {
-                    currentErrorDetails.push(`Error updating chunk of data for plant ${plant}: ${updateError.message}`);
+                if (upsertError) {
+                    currentErrorDetails.push(`Error upserting chunk of data for plant ${plant}: ${upsertError.message}`);
                 } else {
                     successCount += chunk.length;
                 }
@@ -112,9 +82,9 @@ export default function FgUploadStockIdentity({ plant }) {
         }
 
         const errorCount = currentErrorDetails.length;
-        let finalMessage = `Synchronization complete for plant ${plant}. ${successCount} rows updated.`;
+        let finalMessage = `Synchronization complete. ${successCount} rows upserted into fg_stock_identity for plant ${plant}.`;
         if (errorCount > 0) {
-            finalMessage += ` ${errorCount} rows had errors or were skipped.`;
+            finalMessage += ` ${errorCount} rows had errors.`;
         }
         setMessage(finalMessage);
         setErrorDetails(currentErrorDetails);
@@ -133,7 +103,7 @@ export default function FgUploadStockIdentity({ plant }) {
   return (
     <div>
       <h1>FG Upload Stock Identity</h1>
-      <p>Upload a CSV file to update stock identity (SO Number, Customer, etc.) for the selected plant. This will only update existing items and will not add new ones.</p>
+      <p>Upload a CSV file to update or create stock identity data in the <strong>fg_stock_identity</strong> table. This will serve as the master data for finished goods.</p>
       <input type="file" accept=".csv" onChange={handleFileChange} disabled={uploading} />
       <button onClick={handleUpload} disabled={uploading || !file}>
         {uploading ? 'Processing...' : 'Upload and Synchronize'}
@@ -141,7 +111,7 @@ export default function FgUploadStockIdentity({ plant }) {
       {message && <p>{message}</p>}
       {errorDetails.length > 0 && (
         <div style={{ marginTop: '20px' }}>
-          <h3>Error/Skipped Details:</h3>
+          <h3>Error Details:</h3>
           <ul style={{ color: 'orange', maxHeight: '200px', overflowY: 'auto', border: '1px solid #ccc', padding: '10px' }}>
             {errorDetails.map((err, index) => (
               <li key={index}>{err}</li>

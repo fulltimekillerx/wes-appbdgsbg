@@ -43,3 +43,12 @@ ON public.fg_delivery_schedule
 FOR INSERT
 TO authenticated
 WITH CHECK (true);
+
+-- This policy allows authenticated users to update schedules.
+-- Make sure to specify the roles that should have this permission.
+CREATE POLICY "Allow authenticated users to update schedules"
+ON public.fg_delivery_schedule
+FOR UPDATE
+TO authenticated
+USING (true)
+WITH CHECK (true);
