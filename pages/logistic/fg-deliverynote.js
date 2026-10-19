@@ -3,7 +3,7 @@ import { supabase } from '../../supabase/client';
 import { useAuth } from '../../hooks/useAuth';
 
 const FGDeliveryNote = ({ plant }) => {
-  const { user } = useAuth(); // Get user for schedule updates
+  const { user } = useAuth();
   const [loadedData, setLoadedData] = useState({});
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -152,28 +152,32 @@ const FGDeliveryNote = ({ plant }) => {
 
       <h3>Shipments Ready for Delivery Note</h3>
       {Object.keys(loadedData).length > 0 ? (
-        Object.entries(loadedData).map(([loadingNo, data]) => (
-          <div key={loadingNo} className="card mb-4">
-            <div className="card-body">
-              <table className="table table-sm">
-                <thead>
-                  <tr>
-                    <th>Loading No</th>
-                    <th>Truck No</th>
-                    <th>LMG Number</th>
-                    <th>SO Number</th>
-                    <th>SO Item</th>
-                    <th>Customer</th>
-                    <th>Design</th>
-                    <th>Quantity</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.items.map((item, index) => (
+        <div className="card">
+          <div className="card-body">
+            <table className="table table-sm table-bordered">
+              <thead>
+                <tr>
+                  <th>Loading No</th>
+                  <th>Truck No</th>
+                  <th>LMG Number</th>
+                  <th>SO Number</th>
+                  <th>SO Item</th>
+                  <th>Customer</th>
+                  <th>Design</th>
+                  <th>Quantity</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(loadedData).map(([loadingNo, data]) => (
+                  data.items.map((item, index) => (
                     <tr key={item.id}>
-                      <td>{loadingNo}</td>
-                      <td>{data.truck_no}</td>
+                      {index === 0 && (
+                        <td rowSpan={data.items.length} style={{ verticalAlign: 'middle' }}>{loadingNo}</td>
+                      )}
+                      {index === 0 && (
+                        <td rowSpan={data.items.length} style={{ verticalAlign: 'middle' }}>{data.truck_no}</td>
+                      )}
                       <td>{item.lmg_number}</td>
                       <td>{item.so_number}</td>
                       <td>{item.so_item}</td>
@@ -183,7 +187,7 @@ const FGDeliveryNote = ({ plant }) => {
                       {index === 0 && (
                         <td rowSpan={data.items.length} style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                           <button 
-                            className="btn btn-success btn-sm d-block w-100" 
+                            className="btn btn-success btn-sm" 
                             onClick={() => handleUpdateStatus(loadingNo, 'Completed')}
                           >
                             DN Completed
@@ -191,12 +195,12 @@ const FGDeliveryNote = ({ plant }) => {
                         </td>
                       )}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  ))
+                ))}
+              </tbody>
+            </table>
           </div>
-        ))
+        </div>
       ) : (
         <p>No shipments are currently marked as 'Loaded'.</p>
       )}

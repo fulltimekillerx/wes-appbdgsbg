@@ -2,14 +2,16 @@ import Link from 'next/link';
 import { useAuth } from '../hooks/useAuth';
 import { useState, useEffect, Children, cloneElement, useRef } from 'react';
 import { supabase } from '../supabase/client'; // Import supabase client
+import { useRouter } from 'next/router';
 
 const Layout = ({ children }) => {
   const { user, loading, logout } = useAuth() || {};
   const [permissions, setPermissions] = useState(null); // Local state for permissions
-  const [plant, setPlant] = useState('7025');
+  const [plant, setPlant] = useState(null);
   const [openMenu, setOpenMenu] = useState(null);
-  const [plants, setPlants] = useState([]);
   const menuRef = useRef(null);
+  const router = useRouter();
+  const isPublicPage = ['/', '/login', '/signup', '/forgot-password'].includes(router.pathname);
 
   // Effect to handle clicks outside of the menu to close it
   useEffect(() => {
@@ -27,10 +29,19 @@ const Layout = ({ children }) => {
 
   // Fetch permissions and plants when the user is loaded
   useEffect(() => {
+    if (loading) return;
+
     if (user) {
+      const selectedPlant = localStorage.getItem('plant');
+      if (selectedPlant) {
+        setPlant(selectedPlant);
+      } else if (!isPublicPage) {
+        router.push('/login');
+      }
+
       const fetchInitialData = async () => {
         // Fetch Permissions
-        const { data: permissionsData, error: permissionsError } = await supabase
+        const { data: permissionsData } = await supabase
           .from('user_profiles')
           .select('permissions')
           .eq('id', user.id)
@@ -39,29 +50,18 @@ const Layout = ({ children }) => {
         if (permissionsData) {
           setPermissions(permissionsData.permissions);
         }
-
-        // Fetch Plants
-        const { data: plantsData, error: plantsError } = await supabase
-          .from('plant')
-          .select('plant_code');
-        
-        if (plantsData) {
-          setPlants(plantsData);
-          if (plantsData.length > 0) {
-            setPlant(plantsData[0].plant_code);
-          }
-        }
       };
       fetchInitialData();
-    } else {
-      // Clear permissions and plants if user logs out
-      setPermissions(null);
-      setPlants([]);
+    } else if (!isPublicPage) {
+      router.push('/login');
     }
-  }, [user]);
+  }, [user, loading, router.pathname]);
 
-  const handlePlantChange = (event) => {
-    setPlant(event.target.value);
+  const handleLogout = async () => {
+      await logout();
+      localStorage.removeItem('plant');
+      setPlant(null);
+      router.push('/login');
   };
 
   const toggleMenu = (menu) => {
@@ -102,6 +102,9 @@ const Layout = ({ children }) => {
         { href: "/logistic/fg-stock", label: "Stock", permission: "fg-stock" },
         { href: "/logistic/fg-loadingdock", label: "FG Loading Dock", permission: "fg-loadingdock" },
         { href: "/logistic/fg-receive", label: "Goods Receive", permission: "fg-receive" },
+        { href: "/logistic/fg-removestock", label: "Remove Stock", permission: "fg-removestock" },
+        { href: "/logistic/fg-customerreturn", label: "Customer Return", permission: "fg-customerreturn" },
+        { href: "/logistic/fg-printlabel", label: "Print Label", permission: "fg-printlabel" },
         { href: "/logistic/fg-deliverynote", label: "Delivery Note", permission: "fg-deliverynote" },
         { href: "/logistic/fg-movement-history", label: "Movement History", permission: "fg-movement-history" },
         { href: "/logistic/fg-upload-delivery-schedule", label: "Upload Delivery Schedule", permission: "fg-upload-delivery-schedule" },
@@ -137,6 +140,10 @@ const Layout = ({ children }) => {
     return <div>Loading...</div>;
   }
 
+  if (!user && !isPublicPage) {
+    return <div>Redirecting to login...</div>;
+  }
+
   return (
     <div className="container">
       <header className="header">
@@ -167,14 +174,7 @@ const Layout = ({ children }) => {
                   </li>
                 ))}
                 <li style={{ marginRight: '1rem' }}>
-                  <button onClick={logout}>Log Out</button>
-                </li>
-                <li>
-                <select value={plant} onChange={handlePlantChange}>
-                  {plants.map(p => (
-                    <option key={p.plant_code} value={p.plant_code}>{p.plant_code}</option>
-                  ))}
-                </select>
+                  <button onClick={handleLogout}>Log Out</button>
                 </li>
               </>
             ) : (
@@ -189,11 +189,11 @@ const Layout = ({ children }) => {
             )}
           </ul>
         </nav>
-        {user && <span>Welcome, {user?.user_metadata?.display_name}</span>}
+        {user && plant && <span>Welcome, {user?.user_metadata?.display_name} (Plant: {plant})</span>}
       </header>
       <main className="main">
         <div className="content">
-          {childrenWithProps}
+           {(!user && !isPublicPage) ? <div>Redirecting to login...</div> : childrenWithProps}
         </div>
       </main>
     </div>
