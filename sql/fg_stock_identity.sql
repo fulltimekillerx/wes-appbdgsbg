@@ -8,6 +8,7 @@ CREATE TABLE public.fg_stock_identity (
   print_design TEXT,
   quantity NUMERIC,
   weight NUMERIC,
+  weight_per_pcs NUMERIC,
   created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
   updated_at TIMESTAMPTZ DEFAULT now() NOT NULL,
   CONSTRAINT fg_stock_identity_pkey PRIMARY KEY (lmg_number, plant)
@@ -35,17 +36,3 @@ FOR UPDATE
 TO authenticated
 USING (true)
 WITH CHECK (true);
-
--- 4. Add a trigger to automatically update the updated_at timestamp
-CREATE OR REPLACE FUNCTION public.handle_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = now();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER on_fg_stock_identity_updated
-BEFORE UPDATE ON public.fg_stock_identity
-FOR EACH ROW
-EXECUTE FUNCTION public.handle_updated_at();

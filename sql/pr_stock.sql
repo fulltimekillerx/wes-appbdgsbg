@@ -16,6 +16,7 @@ CREATE TABLE public.pr_stock (
   goods_receive_date timestamptz,
   kind text,
   batch text,
+  on_production boolean DEFAULT false,
   updated_at timestamptz DEFAULT now(),
   CONSTRAINT pr_stock_pkey PRIMARY KEY (roll_id, plant)
 );

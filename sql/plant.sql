@@ -4,7 +4,7 @@
 CREATE TABLE public.plant (
   plant_code integer NOT NULL,
   description text,
-  CONSTRAINT plant_pkey PRIMARY KEY (plant)
+  CONSTRAINT plant_pkey PRIMARY KEY (plant_code)
 );
 
 -- 2. Enable Row Level Security (RLS) for the table
@@ -18,5 +18,5 @@ TO authenticated
 USING (true);
 
 -- 4. Insert the data
-INSERT INTO public.plant (plant, description) VALUES (7025, 'PEP Bandung');
-INSERT INTO public.plant (plant, description) VALUES (7027, 'PEP Subang');
+INSERT INTO public.plant (plant_code, description) VALUES (7025, 'PEP Bandung');
+INSERT INTO public.plant (plant_code, description) VALUES (7027, 'PEP Subang');

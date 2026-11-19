@@ -3,9 +3,21 @@ import React, { useState } from 'react';
 import { supabase } from '../../supabase/client'; // Import the Supabase client
 import Papa from 'papaparse';
 
-// Helper function to safely parse numbers
+// Helper function to safely parse numbers, handling commas
 const parseNumber = (value) => {
   if (value === null || value === undefined || value === '') return null;
+
+  // If it's already a number, return it directly
+  if (typeof value === 'number') return value;
+
+  // If it's a string, remove commas before converting
+  if (typeof value === 'string') {
+    const stringValue = value.replace(/,/g, '');
+    const num = Number(stringValue);
+    return isNaN(num) ? null : num;
+  }
+
+  // For other types, try default conversion
   const num = Number(value);
   return isNaN(num) ? null : num;
 };
@@ -63,6 +75,7 @@ export default function FgUploadStockIdentity({ plant }) {
                 print_design: row.print_design ? String(row.print_design).trim() : null,
                 quantity: parseNumber(row.quantity),
                 weight: parseNumber(row.weight),
+                weight_per_pcs: parseNumber(row.weight_per_pcs),
             };
         }).filter(Boolean);
 

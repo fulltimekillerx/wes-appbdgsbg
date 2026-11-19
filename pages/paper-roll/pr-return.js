@@ -13,6 +13,7 @@ const PRReturn = ({ plant }) => {
   const [initialDiameter, setInitialDiameter] = useState('');
   const [initialGsm, setInitialGsm] = useState('');
   const [initialWidth, setInitialWidth] = useState('');
+  const [initialLength, setInitialLength] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const { user } = useAuth() || {};
@@ -23,7 +24,7 @@ const PRReturn = ({ plant }) => {
     setError('');
     const { data, error } = await supabase
       .from('pr_stock')
-      .select('roll_id, weight, diameter, gsm, width')
+      .select('*')
       .eq('roll_id', currentRollId)
       .eq('plant', plant)
       .single();
@@ -34,35 +35,14 @@ const PRReturn = ({ plant }) => {
       setInitialDiameter('');
       setInitialGsm('');
       setInitialWidth('');
+      setInitialLength('');
     } else if (data) {
       setRollId(data.roll_id);
       setInitialWeight(data.weight);
       setInitialDiameter(data.diameter);
       setInitialGsm(data.gsm);
       setInitialWidth(data.width);
-    }
-  };
-
-  const fetchOriginalLocation = async (currentRollId) => {
-    if (!currentRollId || !plant) return;
-
-    // Find the last 'issue' movement to get the original storage location.
-    const { data, error } = await supabase
-        .from('pr_stock_movements')
-        .select('initial_loc')
-        .eq('roll_id', currentRollId)
-        .eq('plant', plant)
-        .eq('movement_type', '201') // '201' for 'issue to production'
-        .order('timestamp', { ascending: false })
-        .limit(1)
-        .single();
-
-    if (error || !data) {
-        console.error('Original location not found. User must enter it manually.');
-        setLocation(''); // Default to empty if not found
-    } else {
-        // Set the default return location to where it was before being issued.
-        setLocation(data.initial_loc);
+      setInitialLength(data.length);
     }
   };
 
@@ -70,14 +50,12 @@ const PRReturn = ({ plant }) => {
     if (queryRollId && plant) {
       setRollId(queryRollId);
       fetchRollData(queryRollId);
-      fetchOriginalLocation(queryRollId);
     }
   }, [queryRollId, plant]);
 
   const handleRollIdBlur = () => {
     if (!queryRollId && rollId) {
       fetchRollData(rollId);
-      fetchOriginalLocation(rollId);
     }
   };
 
@@ -90,20 +68,8 @@ const PRReturn = ({ plant }) => {
 
   const handleReturn = async (e) => {
     e.preventDefault();
-    if (!user) {
-        setError('You must be logged in to return stock.');
-        return;
-    }
-    if (!plant) {
-        setError('Plant information is not available.');
-        return;
-    }
-    if (!diameter || !location) {
-        setError('Return Diameter and Return Location are required.');
-        return;
-    }
-    if (!initialDiameter || !initialWeight || !initialGsm || !initialWidth) {
-        setError('Could not retrieve full initial roll details. Please re-scan the roll.');
+    if (!user || !plant || !diameter || !location) {
+        setError('All fields are required and you must be logged in.');
         return;
     }
 
@@ -111,10 +77,11 @@ const PRReturn = ({ plant }) => {
     setError('');
 
     try {
-        const coreDiameter = 10; // All diameters are in cm.
+        const coreDiameter = 10; // cm
         const returnDiameter = parseFloat(diameter);
         const initialDia = parseFloat(initialDiameter);
         const initialWt = parseFloat(initialWeight);
+        const initialLen = parseFloat(initialLength);
         const gsm = parseFloat(initialGsm);
         const width = parseFloat(initialWidth);
 
@@ -126,23 +93,20 @@ const PRReturn = ({ plant }) => {
         const denominator = (initialDia ** 2) - (coreDiameter ** 2);
 
         if (denominator <= 0) {
-            throw new Error('Initial diameter is too small for calculation (must be > 10cm).');
+            throw new Error('Initial diameter is too small for calculation.');
         }
 
         const newWeightRaw = (numerator / denominator) * initialWt;
-        //const consumedWeight = initialWt - newWeightRaw;
+        const newWeight = parseFloat(newWeightRaw.toFixed(2));
+        const consumedWeight = initialWt - newWeight;
 
         const areaDensityKgM2 = gsm / 1000;
         const widthM = width / 100;
-        if (areaDensityKgM2 <= 0 || widthM <= 0) {
-            throw new Error('GSM and Width must be positive values to calculate length.');
-        }
         
         const newLength = Math.ceil(newWeightRaw / (areaDensityKgM2 * widthM));
-        const newWeight = parseFloat(newWeightRaw.toFixed(2));
+        const consumedLength = initialLen - newLength;
 
-
-        // 1. Record the return movement with correct column names
+        // Record the return movement
         const { error: movementError } = await supabase.from('pr_stock_movements').insert([
             {
                 roll_id: rollId,
@@ -150,11 +114,17 @@ const PRReturn = ({ plant }) => {
                 movement_type: '202',
                 initial_loc: bin_location,
                 destination_loc: location,
-                weight: newWeight,
-                length: newLength,
-                diameter: returnDiameter,
+                weight_in: initialWt,
+                diameter_in: initialDia,
+                length_in: initialLen,
+                weight_out: newWeight,
+                diameter_out: returnDiameter,
+                length_out: newLength,
+                weight: -consumedWeight,
+                length: -consumedLength,
+                diameter: -(initialDia - returnDiameter),
                 batch: 'OLD',
-                user_id: user.user_metadata.display_name || user.email,
+                user_id: user.id,
             },
         ]);
 
@@ -162,7 +132,7 @@ const PRReturn = ({ plant }) => {
             throw new Error(`Failed to record return movement: ${movementError.message}`);
         }
 
-        // 2. Update the stock record with new values
+        // Update the stock record with new values
         const { error: updateError } = await supabase
             .from('pr_stock')
             .update({
@@ -171,16 +141,16 @@ const PRReturn = ({ plant }) => {
                 diameter: returnDiameter,
                 length: newLength,
                 batch: 'OLD',
+                on_production: false,
             })
             .eq('roll_id', rollId)
             .eq('plant', plant);
 
         if (updateError) {
-            console.error("Attempting to rollback movement record...");
-            throw new Error(`Failed to update stock details: ${updateError.message}. Manual correction might be needed.`);
+            throw new Error(`Failed to update stock: ${updateError.message}.`);
         }
 
-        setMessage(`Roll ${rollId} successfully returned to ${location}. New weight: ${newWeight}kg, New length: ${newLength}m.`);
+        setMessage(`Roll ${rollId} returned to ${location}. New weight: ${newWeight}kg, New length: ${newLength}m.`);
         setTimeout(() => router.push(`/paper-roll/pr-issue?plant=${plant}`), 3000);
 
     } catch (error) {
@@ -206,18 +176,23 @@ const PRReturn = ({ plant }) => {
             onBlur={handleRollIdBlur}
             onKeyDown={handleKeyDown}
             readOnly={!!queryRollId}
-            placeholder={queryRollId ? '' : 'Enter Roll ID and press Enter'}
+            placeholder="Scan or enter Roll ID"
           />
         </div>
 
-        <div className="form-group">
-          <label>Initial Weight (kg)</label>
-          <input type="text" className="form-control" value={initialWeight} readOnly />
-        </div>
-
-        <div className="form-group">
-          <label>Initial Diameter (cm)</label>
-          <input type="text" className="form-control" value={initialDiameter} readOnly />
+        <div className="form-row">
+            <div className="form-group col-md-4">
+                <label>Initial Weight (kg)</label>
+                <input type="text" className="form-control" value={initialWeight} readOnly />
+            </div>
+            <div className="form-group col-md-4">
+                <label>Initial Diameter (cm)</label>
+                <input type="text" className="form-control" value={initialDiameter} readOnly />
+            </div>
+            <div className="form-group col-md-4">
+                <label>Initial Length (m)</label>
+                <input type="text" className="form-control" value={initialLength} readOnly />
+            </div>
         </div>
 
         <hr />

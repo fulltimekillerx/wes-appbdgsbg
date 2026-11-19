@@ -5,25 +5,32 @@ import { useAuth } from '../../hooks/useAuth';
 
 const PRIssue = ({ plant }) => {
   const router = useRouter();
+  const { user } = useAuth() || {};
+
+  // State for the settings form
+  const [postDate, setPostDate] = useState(new Date().toISOString().split('T')[0]);
   const [machineNumber, setMachineNumber] = useState('C1');
-  const [isMachineLocked, setIsMachineLocked] = useState(false);
   const [group, setGroup] = useState('A');
-  const [isGroupLocked, setIsGroupLocked] = useState(false);
+  const [shift, setShift] = useState('1');
+  const [areSettingsLocked, setAreSettingsLocked] = useState(false);
+
+  // State for the consumption form
   const [unitName, setUnitName] = useState('CL');
   const [rollId, setRollId] = useState('');
+  
+  // State for data and UI feedback
   const [productionRolls, setProductionRolls] = useState([]);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const { user } = useAuth() || {};
 
-  // Fetches all rolls with the 'PRODUCTION' batch status for the current plant
+  // Fetches all rolls with the on_production flag set to true for the current plant
   const fetchProductionRolls = async () => {
     if (!plant) return;
     const { data, error } = await supabase
       .from('pr_stock')
       .select('*')
       .eq('plant', plant)
-      .eq('batch', 'PRODUCTION');
+      .eq('on_production', true);
 
     if (error) {
       setError(`Failed to fetch production rolls: ${error.message}`);
@@ -39,7 +46,7 @@ const PRIssue = ({ plant }) => {
     }
   }, [plant]);
 
-  // Handles the consumption of a paper roll
+  // Handles the consumption of a paper roll (moving it to the production line)
   const handleConsume = async (e) => {
     e.preventDefault();
     if (!rollId || !user || !plant) {
@@ -63,33 +70,17 @@ const PRIssue = ({ plant }) => {
         throw new Error(`Roll ID ${rollId} not found in plant ${plant}.`);
       }
 
-      const destination = `${machineNumber} - ${unitName} - ${group}`;
-
-      // Create a new record in the pr_stock_movements table to log the consumption
-      const { error: movementError } = await supabase.from('pr_stock_movements').insert([
-        {
-          roll_id: stockData.roll_id,
-          plant: plant,
-          movement_type: '201', // 201 represents consumption
-          initial_loc: stockData.bin_location,
-          destination_loc: destination,
-          weight: -stockData.weight,
-          diameter: -stockData.diameter,
-          length: -stockData.length,
-          prod_order_no: stockData.prod_order_no,
-          batch: stockData.batch,
-          user_id: user.user_metadata.display_name || user.email,
-        },
-      ]);
-
-      if (movementError) {
-        throw new Error(`Failed to record movement: ${movementError.message}`);
+      // Check if the roll is already on a production line
+      if (stockData.on_production) {
+        throw new Error(`Roll ${stockData.roll_id} is already on a production line.`);
       }
 
-      // Update the bin location and batch of the roll in the pr_stock table
+      const destination = `${machineNumber} - ${unitName} - ${group}`;
+
+      // Update the bin location and set the on_production flag to true
       const { error: updateError } = await supabase
         .from('pr_stock')
-        .update({ bin_location: destination, batch: 'PRODUCTION' })
+        .update({ bin_location: destination, on_production: true })
         .eq('roll_id', rollId)
         .eq('plant', plant);
 
@@ -105,69 +96,56 @@ const PRIssue = ({ plant }) => {
     }
   };
 
-  // Handles the cancellation of a roll issue
-  const handleCancel = async (roll) => {
-    try {
-      // Find the issue movement to be cancelled
-      const { data: issueMovement, error: movementError } = await supabase
-        .from('pr_stock_movements')
-        .select('id, initial_loc, batch')
-        .eq('roll_id', roll.roll_id)
-        .eq('movement_type', '201')
-        .eq('destination_loc', roll.bin_location)
-        .order('timestamp', { ascending: false })
-        .limit(1)
-        .single();
-
-      if (movementError || !issueMovement) {
-        throw new Error(`Could not find the specific 'issue' movement to cancel for roll ${roll.roll_id}. It may have been cancelled already.`);
-      }
-
-      const originalLocation = issueMovement.initial_loc;
-      if (!originalLocation) {
-          throw new Error(`Original location for roll ${roll.roll_id} is missing from its movement history.`);
-      }
-
-      // Revert the bin location and batch of the roll in the pr_stock table
-      const { error: updateError } = await supabase
-        .from('pr_stock')
-        .update({ bin_location: originalLocation, batch: issueMovement.batch })
-        .eq('roll_id', roll.roll_id);
-
-      if (updateError) {
-        throw new Error(`Failed to revert stock location: ${updateError.message}`);
-      }
-
-      // Delete the movement record from the pr_stock_movements table
-      const { error: deleteError } = await supabase
-        .from('pr_stock_movements')
-        .delete()
-        .eq('id', issueMovement.id);
-
-      if (deleteError) {
-        throw new Error(`Failed to delete the movement history record: ${deleteError.message}.`);
-      }
-
-      await fetchProductionRolls();
-      setMessage(`Cancelled issue of roll ${roll.roll_id}.`);
-    } catch (error) {
-      setError(`Error cancelling issue: ${error.message}`);
-    }
-  };
-
+  // Handles returning a roll to the warehouse
   const handleReturn = (roll) => {
     router.push(`/paper-roll/pr-return?roll_id=${roll.roll_id}&bin_location=${roll.bin_location}&plant=${plant}`);
   };
 
+  // Handles marking a roll as fully used up
   const handleUsedUp = async (roll) => {
     try {
-      const { error } = await supabase
+        const destination = `${machineNumber} - ${unitName} - ${group}`;
+
+      // Create a 'used up' movement record
+      const { error: movementError } = await supabase.from('pr_stock_movements').insert([
+        {
+          roll_id: roll.roll_id,
+          plant: plant,
+          movement_type: '201',
+          initial_loc: roll.bin_location,
+          destination_loc: destination,
+          prod_order_no: roll.prod_order_no,
+          batch: roll.batch,
+          post_date: postDate,
+          machine_no: machineNumber,
+          group_name: group,
+          shift: shift,
+          user_id: user.id,
+          weight_in: roll.weight,
+          diameter_in: roll.diameter,
+          length_in: roll.length,
+          weight_out: 0,
+          diameter_out: 0,
+          length_out: 0,
+          weight: -roll.weight,
+          diameter: -roll.diameter,
+          length: -roll.length,
+        },
+      ]);
+
+      if (movementError) {
+        throw new Error(`Failed to record 'used up' movement: ${movementError.message}`);
+      }
+
+      // Delete the roll from the pr_stock table as it no longer exists
+      const { error: deleteError } = await supabase
         .from('pr_stock')
         .delete()
-        .eq('roll_id', roll.roll_id);
+        .eq('roll_id', roll.roll_id)
+        .eq('plant', plant);
 
-      if (error) {
-        throw error;
+      if (deleteError) {
+        throw new Error(`Failed to remove roll from stock: ${deleteError.message}.`);
       }
 
       await fetchProductionRolls();
@@ -176,98 +154,102 @@ const PRIssue = ({ plant }) => {
       setError(`Error marking roll as used up: ${error.message}`);
     }
   };
-
+  
   return (
     <div>
       <h1>Issue Paper Roll</h1>
       {message && <div className="alert alert-success">{message}</div>}
       {error && <div className="alert alert-danger">{error}</div>}
 
-      <form onSubmit={handleConsume}>
-        <div className="form-group">
-          <label htmlFor="machineNumber">Machine Number</label>
-          <div className="input-group">
-            <select
-              id="machineNumber"
-              className="form-control"
-              value={machineNumber}
-              onChange={(e) => setMachineNumber(e.target.value)}
-              disabled={isMachineLocked}
-            >
-              <option>C1</option>
-              <option>C2</option>
-            </select>
-            <div className="input-group-append">
-              <button
-                className={`btn ${isMachineLocked ? 'btn-success' : 'btn-outline-secondary'}`}
-                type="button"
-                onClick={() => setIsMachineLocked(!isMachineLocked)}
-              >
-                {isMachineLocked ? 'Unlock' : 'Lock'}
-              </button>
+      <div className="card mb-4">
+        <div className="card-body">
+          <h5 className="card-title">Settings</h5>
+          <fieldset disabled={areSettingsLocked}>
+            <div className="form-row">
+              <div className="form-group col-md-6">
+                <label htmlFor="postDate">Post Date</label>
+                <input
+                  type="date"
+                  id="postDate"
+                  className="form-control"
+                  value={postDate}
+                  onChange={(e) => setPostDate(e.target.value)}
+                />
+              </div>
+              <div className="form-group col-md-6">
+                <label htmlFor="machineNumber">Machine Number</label>
+                <select
+                  id="machineNumber"
+                  className="form-control"
+                  value={machineNumber}
+                  onChange={(e) => setMachineNumber(e.target.value)}
+                >
+                  <option>C1</option>
+                  <option>C2</option>
+                </select>
+              </div>
+              <div className="form-group col-md-6">
+                <label htmlFor="group">Group</label>
+                <select id="group" className="form-control" value={group} onChange={(e) => setGroup(e.target.value)}>
+                  <option>A</option>
+                  <option>B</option>
+                  <option>C</option>
+                  <option>D</option>
+                </select>
+              </div>
+              <div className="form-group col-md-6">
+                <label htmlFor="shift">Shift</label>
+                <select id="shift" className="form-control" value={shift} onChange={(e) => setShift(e.target.value)}>
+                  <option>1</option>
+                  <option>2</option>
+                  <option>3</option>
+                </select>
+              </div>
             </div>
-          </div>
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="group">Group</label>
-          <div className="input-group">
-            <select
-              id="group"
-              className="form-control"
-              value={group}
-              onChange={(e) => setGroup(e.target.value)}
-              disabled={isGroupLocked}
-            >
-              <option>A</option>
-              <option>B</option>
-              <option>C</option>
-              <option>D</option>
-            </select>
-            <div className="input-group-append">
-              <button
-                className={`btn ${isGroupLocked ? 'btn-success' : 'btn-outline-secondary'}`}
-                type="button"
-                onClick={() => setIsGroupLocked(!isGroupLocked)}
-              >
-                {isGroupLocked ? 'Unlock' : 'Lock'}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="unitName">Unit Name</label>
-          <select
-            id="unitName"
-            className="form-control"
-            value={unitName}
-            onChange={(e) => setUnitName(e.target.value)}
+          </fieldset>
+          <button 
+            className={`btn ${areSettingsLocked ? 'btn-outline-danger' : 'btn-primary'}`}
+            onClick={() => setAreSettingsLocked(!areSettingsLocked)}
           >
-            <option>CL</option>
-            <option>CM</option>
-            <option>BL</option>
-            <option>BM</option>
-            <option>DB</option>
-          </select>
+            {areSettingsLocked ? 'Unlock Settings' : 'Lock Settings'}
+          </button>
         </div>
+      </div>
 
-        <div className="form-group">
-          <label htmlFor="rollId">Scan Roll ID</label>
-          <input
-            type="text"
-            id="rollId"
-            className="form-control"
-            value={rollId}
-            onChange={(e) => setRollId(e.target.value)}
-            placeholder="Scan roll barcode"
-            required
-          />
-        </div>
-
-        <button type="submit" className="btn btn-primary">
-          Consume Roll
-        </button>
+      <form onSubmit={handleConsume}>
+        <fieldset disabled={!areSettingsLocked}>
+          <legend>Consume Roll</legend>
+          <div className="form-group">
+            <label htmlFor="unitName">Unit Name</label>
+            <select
+              id="unitName"
+              className="form-control"
+              value={unitName}
+              onChange={(e) => setUnitName(e.target.value)}
+            >
+              <option>CL</option>
+              <option>CM</option>
+              <option>BL</option>
+              <option>BM</option>
+              <option>DB</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label htmlFor="rollId">Scan Roll ID</label>
+            <input
+              type="text"
+              id="rollId"
+              className="form-control"
+              value={rollId}
+              onChange={(e) => setRollId(e.target.value)}
+              placeholder="Scan roll barcode"
+              required
+            />
+          </div>
+          <button type="submit" className="btn btn-primary">
+            Consume Roll
+          </button>
+        </fieldset>
       </form>
 
       <h2 className="mt-5">Roll on Production</h2>
@@ -294,7 +276,6 @@ const PRIssue = ({ plant }) => {
                 <td>{roll.weight}</td>
                 <td>{roll.bin_location}</td>
                 <td>
-                  <button className="btn btn-sm btn-warning mr-2" onClick={() => handleCancel(roll)}>Cancel</button>
                   <button className="btn btn-sm btn-info mr-2" onClick={() => handleReturn(roll)}>Return</button>
                   <button className="btn btn-sm btn-danger" onClick={() => handleUsedUp(roll)}>Used Up</button>
                 </td>
