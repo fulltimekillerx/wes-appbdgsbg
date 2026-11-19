@@ -25,7 +25,7 @@ export default function Login() {
       // On successful login, fetch plants
       const { data: plantsData, error: plantsError } = await supabase
         .from('plant')
-        .select('plant_code');
+        .select('plant_code, description');
 
       if (plantsError) {
         setError('Failed to fetch plants. Please try again.');
@@ -58,7 +58,7 @@ export default function Login() {
             <label style={{ display: 'inline-block', width: '80px' }}>Plant</label>
             <select value={plant} onChange={(e) => setPlant(e.target.value)}>
               {plants.map(p => (
-                <option key={p.plant_code} value={p.plant_code}>{p.plant_code}</option>
+                <option key={p.plant_code} value={p.plant_code}>{p.description}</option>
               ))}
             </select>
           </div>

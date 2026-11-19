@@ -1,7 +1,7 @@
 -- SQL query to create the pr_stock_movements table for Supabase
 
 -- 1. Drop the old table if it exists and you want a fresh start
--- DROP TABLE IF EXISTS public.pr_stock_movements;
+ DROP TABLE IF EXISTS public.pr_stock_movements;
 
 -- 2. Create the new table with the correct columns
 CREATE TABLE public.pr_stock_movements (
@@ -12,12 +12,22 @@ CREATE TABLE public.pr_stock_movements (
   initial_loc text,
   destination_loc text,
   batch text,
+  weight_in numeric,
+  diameter_in numeric,
+  length_in numeric,
+  weight_out numeric,
+  diameter_out numeric,
+  length_out numeric,
   weight numeric,
   diameter numeric,
   length numeric,
   timestamp timestamptz DEFAULT now(),
   prod_order_no text,
-  user_id text,
+  user_id uuid REFERENCES auth.users(id),
+  post_date date,
+  machine_no text,
+  group_name text,
+  shift text,
   CONSTRAINT pr_stock_movements_pkey PRIMARY KEY (id)
 );
 
@@ -25,14 +35,14 @@ CREATE TABLE public.pr_stock_movements (
 ALTER TABLE public.pr_stock_movements ENABLE ROW LEVEL SECURITY;
 
 -- 4. Create policies to control access
-CREATE POLICY "Allow authenticated users to view their own stock movements"
+CREATE POLICY "Allow authenticated users to view their own movements"
 ON public.pr_stock_movements
 FOR SELECT
 TO authenticated
-USING (true);
+USING (auth.uid() = user_id);
 
-CREATE POLICY "Allow authenticated users to insert their own stock movements"
+CREATE POLICY "Allow users to insert their own movements"
 ON public.pr_stock_movements
 FOR INSERT
 TO authenticated
-WITH CHECK (true);
+WITH CHECK (auth.uid() = user_id);

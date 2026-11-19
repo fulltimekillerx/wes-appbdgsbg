@@ -60,7 +60,6 @@ VALUES
       ('pr-stock-opname', 'Perform PR Stock Opname'),
       ('pr-stock', 'View Paper Roll Stock'),
       ('pr-upload-stock', 'Upload Paper Roll Stock'),
-      ('pr-stock-pivot', 'Analyze Paper Roll Stock with Pivot Table'),
       ('pr-map', 'Paper Roll Mapping for each type')
 ON CONFLICT (name) DO NOTHING;
 

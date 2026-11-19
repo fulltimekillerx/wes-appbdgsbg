@@ -1,6 +1,6 @@
 {
   "name": "wes-appbdgsbg",
-  "version": "0.5.8",
+  "version": "0.5.13",
   "private": true,
   "scripts": {
     "dev": "next dev",

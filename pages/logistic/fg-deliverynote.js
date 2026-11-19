@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
 import { useAuth } from '../../hooks/useAuth';
+import Link from 'next/link';
 
 const FGDeliveryNote = ({ plant }) => {
   const { user } = useAuth();
@@ -31,6 +32,20 @@ const FGDeliveryNote = ({ plant }) => {
         acc[key].items.push(item);
         return acc;
       }, {});
+
+      // Combine items with the same SO_number and so_item
+      for (const loadingNo in groupedByLoadingNo) {
+        const items = groupedByLoadingNo[loadingNo].items;
+        const combinedItems = items.reduce((acc, item) => {
+          const key = `${item.so_number}-${item.so_item}`;
+          if (!acc[key]) {
+            acc[key] = { ...item, quantity: 0 };
+          }
+          acc[key].quantity += item.quantity;
+          return acc;
+        }, {});
+        groupedByLoadingNo[loadingNo].items = Object.values(combinedItems);
+      }
 
       setLoadedData(groupedByLoadingNo);
     } catch (err) {
@@ -159,7 +174,6 @@ const FGDeliveryNote = ({ plant }) => {
                 <tr>
                   <th>Loading No</th>
                   <th>Truck No</th>
-                  <th>LMG Number</th>
                   <th>SO Number</th>
                   <th>SO Item</th>
                   <th>Customer</th>
@@ -178,7 +192,6 @@ const FGDeliveryNote = ({ plant }) => {
                       {index === 0 && (
                         <td rowSpan={data.items.length} style={{ verticalAlign: 'middle' }}>{data.truck_no}</td>
                       )}
-                      <td>{item.lmg_number}</td>
                       <td>{item.so_number}</td>
                       <td>{item.so_item}</td>
                       <td>{item.customer_name}</td>
@@ -192,6 +205,9 @@ const FGDeliveryNote = ({ plant }) => {
                           >
                             DN Completed
                           </button>
+                          <Link href={`/logistic/fg-deliverynote-details?loading_no=${loadingNo}`} passHref>
+                            <button className="btn btn-info btn-sm ms-1">Details</button>
+                          </Link>
                         </td>
                       )}
                     </tr>
